@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: seo-automation-service
+    env: docker
+    plan: free
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
