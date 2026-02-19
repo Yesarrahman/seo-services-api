@@ -21,7 +21,7 @@ function extractSEOFromCheerio($, url) {
   let schema = null
   const schemaScripts = $('script[type="application/ld+json"]')
   if (schemaScripts.length > 0) {
-    try { schema = JSON.parse($(schemaScripts[0]).html()) } catch (e) { }
+    try { schema = JSON.parse($(schemaScripts[0]).html()) } catch (e) {}
   }
   const hostname = new URL(url).hostname
   const internalLinks = $('a[href^="/"], a[href*="' + hostname + '"]').length
@@ -60,7 +60,7 @@ async function crawlWithPuppeteer(url, extractData) {
       const canonical = canonicalEl ? canonicalEl.getAttribute('href') : ''
       let schema = null
       const schemaEl = document.querySelector('script[type="application/ld+json"]')
-      if (schemaEl) { try { schema = JSON.parse(schemaEl.innerText) } catch (e) { } }
+      if (schemaEl) { try { schema = JSON.parse(schemaEl.innerText) } catch(e) {} }
       const hostname = new URL(pageUrl).hostname
       const allLinks = Array.from(document.querySelectorAll('a[href]'))
       const internalLinks = allLinks.filter(a => a.href.startsWith('/') || a.href.includes(hostname)).length
@@ -107,7 +107,7 @@ app.post('/crawl', async (req, res) => {
     }
 
     // Step 2: If Cheerio got no meaningful data (JS-rendered site), fall back to Puppeteer
-    const isEmpty = !result || (!result.title && !result.h1 && (!result.h2s || result.h2s.length === 0))
+    const isEmpty = !result || result.wordCount === 0 || (!result.h1 && (!result.h2s || result.h2s.length === 0))
     if (isEmpty) {
       console.log(`Cheerio returned empty for ${url}, falling back to Puppeteer...`)
       result = await crawlWithPuppeteer(url, extractData)
@@ -161,7 +161,7 @@ app.post('/crawl-blog', async (req, res) => {
               async requestHandler({ request: articleRequest, $: article$ }) {
                 const title = article$('h1').first().text().trim() || article$('title').text().trim()
                 const h2s = article$('h2').map((i, el) => article$(el).text().trim()).get()
-
+                
                 // Extract keywords (simple frequency analysis)
                 const bodyText = article$('article, main, .content, .post-content').text()
                 const words = bodyText.toLowerCase().match(/\b\w{4,}\b/g) || []
@@ -171,20 +171,20 @@ app.post('/crawl-blog', async (req, res) => {
                     wordFreq[word] = (wordFreq[word] || 0) + 1
                   }
                 })
-
+                
                 // Get top keywords
                 const keywords = Object.entries(wordFreq)
                   .sort((a, b) => b[1] - a[1])
                   .slice(0, 10)
                   .reduce((obj, [key, val]) => ({ ...obj, [key]: val }), {})
-
+                
                 // Published date (try to find)
                 let publishedDate = null
                 const dateEl = article$('time[datetime]')
                 if (dateEl.length > 0) {
                   publishedDate = dateEl.attr('datetime')
                 }
-
+                
                 const wordCount = bodyText.split(/\s+/).filter(Boolean).length
 
                 articles.push({
@@ -197,7 +197,7 @@ app.post('/crawl-blog', async (req, res) => {
                 })
               }
             })
-
+            
             await articleCrawler.run([link])
           } catch (e) {
             console.error(`Failed to crawl article ${link}:`, e)
@@ -237,7 +237,7 @@ app.post('/generate-pdf', async (req, res) => {
     })
 
     const page = await browser.newPage()
-
+    
     // Set HTML content
     await page.setContent(html, {
       waitUntil: 'networkidle0'
@@ -273,9 +273,9 @@ app.post('/generate-pdf', async (req, res) => {
 
   } catch (error) {
     console.error('PDF generation error:', error)
-    res.status(500).json({
-      error: 'Failed to generate PDF',
-      message: error.message
+    res.status(500).json({ 
+      error: 'Failed to generate PDF', 
+      message: error.message 
     })
   }
 })
@@ -285,8 +285,8 @@ app.post('/generate-pdf', async (req, res) => {
 // ============================================
 
 app.get('/health', (req, res) => {
-  res.json({
-    status: 'ok',
+  res.json({ 
+    status: 'ok', 
     service: 'combined-seo-automation-service',
     endpoints: {
       crawl: 'POST /crawl',
