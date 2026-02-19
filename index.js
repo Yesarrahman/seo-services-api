@@ -1,6 +1,3 @@
-
-Copy
-
 const express = require('express')
 const { CheerioCrawler } = require('crawlee')
 const puppeteer = require('puppeteer')
