@@ -19,9 +19,9 @@ function extractSEOFromCheerio($, url) {
   const wordCount = bodyText.split(/\s+/).filter(Boolean).length
   const canonical = $('link[rel="canonical"]').attr('href') || ''
   let schema = null
-  const schemaScripts = $('script[type="application/ld+json"]')
-  if (schemaScripts.length > 0) {
-    try { schema = JSON.parse($(schemaScripts[0]).html()) } catch (e) { }
+  const schemaEl = $('script[type="application/ld+json"]').first()
+  if (schemaEl.length) {
+    try { schema = JSON.parse(schemaEl.html()) } catch (e) { }
   }
   const hostname = new URL(url).hostname
   const internalLinks = $('a[href^="/"], a[href*="' + hostname + '"]').length
@@ -47,14 +47,22 @@ async function crawlWithAxios(url, extractData) {
 async function crawlWithPuppeteer(url, extractData) {
   const browser = await puppeteer.launch({
     headless: 'new',
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--no-zygote',
+      '--single-process',
+      '--disable-extensions',
+    ],
+    timeout: 60000,
   })
   try {
     const page = await browser.newPage()
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 })
-    // Wait a bit for JS to render
-    await new Promise(r => setTimeout(r, 2000))
+    await new Promise(r => setTimeout(r, 2500))
 
     if (!extractData) {
       const html = await page.content()
@@ -224,10 +232,5 @@ app.get('/', (req, res) => {
 
 const PORT = process.env.PORT || 3000
 app.listen(PORT, () => {
-  console.log(`🚀 SEO Automation Service running on port ${PORT}`)
-  console.log(`📊 Endpoints:`)
-  console.log(`   POST /crawl - Web scraping`)
-  console.log(`   POST /crawl-blog - Blog crawling`)
-  console.log(`   POST /generate-pdf - PDF generation`)
-  console.log(`   GET /health - Health check`)
+  console.log(`🚀 SEO Automation Service v2.0 running on port ${PORT}`)
 })
