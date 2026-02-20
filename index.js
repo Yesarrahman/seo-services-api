@@ -6,6 +6,20 @@ const puppeteer = require('puppeteer')
 const app = express()
 app.use(express.json({ limit: '10mb' }))
 
+// Realistic browser headers to avoid 403s
+const BROWSER_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+  'Accept-Language': 'en-US,en;q=0.9',
+  'Accept-Encoding': 'gzip, deflate, br',
+  'Connection': 'keep-alive',
+  'Upgrade-Insecure-Requests': '1',
+  'Sec-Fetch-Dest': 'document',
+  'Sec-Fetch-Mode': 'navigate',
+  'Sec-Fetch-Site': 'none',
+  'Cache-Control': 'max-age=0',
+}
+
 // ============================================
 // HELPERS
 // ============================================
@@ -32,11 +46,7 @@ function extractSEOFromCheerio($, url) {
 async function crawlWithAxios(url, extractData) {
   const response = await axios.get(url, {
     timeout: 20000,
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      'Accept-Language': 'en-US,en;q=0.5',
-    },
+    headers: BROWSER_HEADERS,
     maxRedirects: 5,
   })
   const $ = cheerio.load(response.data)
@@ -60,7 +70,8 @@ async function crawlWithPuppeteer(url, extractData) {
   })
   try {
     const page = await browser.newPage()
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+    await page.setUserAgent(BROWSER_HEADERS['User-Agent'])
+    await page.setExtraHTTPHeaders({ 'Accept-Language': 'en-US,en;q=0.9' })
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 })
     await new Promise(r => setTimeout(r, 2500))
 
@@ -108,23 +119,23 @@ app.post('/crawl', async (req, res) => {
     let result = null
     let method = 'axios'
 
-    // Step 1: Try axios + cheerio (fast, concurrent-safe, no lock files)
+    // Step 1: Try axios + cheerio (fast, concurrent-safe)
     try {
       result = await crawlWithAxios(url, extractData)
-      console.log(`Axios crawl for ${url}: title="${result.title}", wordCount=${result.wordCount}, h1="${result.h1}"`)
+      console.log(`Axios crawl for ${url}: title="${result.title}", wordCount=${result.wordCount}, h1="${result.h1}", h2s=${result.h2s?.length}`)
     } catch (e) {
       console.log(`Axios failed for ${url}: ${e.message}`)
     }
 
-    // Step 2: Fall back to Puppeteer if content is empty (JS-rendered site)
-    const isEmpty = !result || result.wordCount === 0 || (!result.h1 && (!result.h2s || result.h2s.length === 0))
+    // Step 2: Fall back to Puppeteer ONLY if wordCount is 0 (truly empty / JS-rendered)
+    const isEmpty = !result || result.wordCount === 0
     if (isEmpty) {
       console.log(`Falling back to Puppeteer for ${url}...`)
       method = 'puppeteer'
       result = await crawlWithPuppeteer(url, extractData)
     }
 
-    console.log(`Crawled ${url} via ${method}: title="${result.title}", h1="${result.h1}", h2s=${result.h2s?.length}, words=${result.wordCount}`)
+    console.log(`✅ Done [${method}] ${url}: title="${result.title}", h1="${result.h1}", h2s=${result.h2s?.length}, words=${result.wordCount}`)
     res.json(result)
 
   } catch (error) {
@@ -139,10 +150,7 @@ app.post('/crawl-blog', async (req, res) => {
 
   try {
     const articles = []
-    const response = await axios.get(url, {
-      timeout: 20000,
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SEOBot/1.0)' }
-    })
+    const response = await axios.get(url, { timeout: 20000, headers: BROWSER_HEADERS })
     const $ = cheerio.load(response.data)
     const baseUrl = new URL(url)
 
@@ -153,7 +161,7 @@ app.post('/crawl-blog', async (req, res) => {
 
     for (const link of articleLinks) {
       try {
-        const articleRes = await axios.get(link, { timeout: 15000, headers: { 'User-Agent': 'Mozilla/5.0 (compatible; SEOBot/1.0)' } })
+        const articleRes = await axios.get(link, { timeout: 15000, headers: BROWSER_HEADERS })
         const a$ = cheerio.load(articleRes.data)
         const title = a$('h1').first().text().trim() || a$('title').text().trim()
         const h2s = a$('h2').map((i, el) => a$(el).text().trim()).get()
@@ -211,16 +219,16 @@ app.post('/generate-pdf', async (req, res) => {
 })
 
 // ============================================
-// HEALTH CHECK
+// HEALTH & ROOT
 // ============================================
 
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', service: 'combined-seo-automation-service', version: '2.0.0' })
+  res.json({ status: 'ok', service: 'combined-seo-automation-service', version: '2.1.0' })
 })
 
 app.get('/', (req, res) => {
   res.json({
-    service: 'SEO Automation Service', version: '2.0.0',
+    service: 'SEO Automation Service', version: '2.1.0',
     endpoints: [
       { method: 'POST', path: '/crawl', description: 'Crawl a single page (axios → puppeteer fallback)' },
       { method: 'POST', path: '/crawl-blog', description: 'Crawl blog/article pages' },
@@ -232,5 +240,5 @@ app.get('/', (req, res) => {
 
 const PORT = process.env.PORT || 3000
 app.listen(PORT, () => {
-  console.log(`🚀 SEO Automation Service v2.0 running on port ${PORT}`)
+  console.log(`🚀 SEO Automation Service v2.1 running on port ${PORT}`)
 })
